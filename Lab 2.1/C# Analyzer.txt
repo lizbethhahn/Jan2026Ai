@@ -1,0 +1,187 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Collections.Generic;
+using System.Globalization;
+
+/// <summary>
+/// Data model representing a single sales transaction.
+/// </summary>
+public record SalesItem(string ProductName, decimal Price, int Quantity);
+
+/// <summary>
+/// SalesAnalyzer is responsible for loading, validating, and analyzing sales data from a CSV file.
+/// It provides methods to load data, calculate total sales, and find the top-selling product.
+/// </summary>
+public class SalesAnalyzer
+{
+    private readonly string _filename;
+    private List<SalesItem> _salesData;
+    private int _processedRows;
+    private int _skippedRows;
+
+    /// <summary>
+    /// Initializes a new instance of the SalesAnalyzer class with the specified CSV filename.
+    /// </summary>
+    /// <param name="filename">The path to the CSV file to analyze.</param>
+    public SalesAnalyzer(string filename)
+    {
+        _filename = filename;
+        _salesData = new List<SalesItem>();
+        _processedRows = 0;
+        _skippedRows = 0;
+    }
+
+    /// <summary>
+    /// Loads and parses the CSV file into a list of SalesItem objects.
+    /// Performs validation on each row and reports any errors or malformed data.
+    /// </summary>
+    public void LoadData()
+    {
+        _salesData.Clear();
+        _processedRows = 0;
+        _skippedRows = 0;
+
+        try
+        {
+            if (!File.Exists(_filename))
+            {
+                Console.WriteLine($"Error: FileNotFoundError - The file '{_filename}' does not exist.");
+                return;
+            }
+
+            var dataLines = File.ReadLines(_filename).Skip(1);
+
+            foreach (string line in dataLines)
+            {
+                // Skip empty lines
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    _skippedRows++;
+                    continue;
+                }
+
+                string[] columns = line.Split(',');
+
+                // Validate column count
+                if (columns.Length != 3)
+                {
+                    Console.WriteLine($"Error: ValueError - Row has {columns.Length} columns, expected 3: {line}");
+                    _skippedRows++;
+                    continue;
+                }
+
+                // Extract and trim product name
+                string productName = columns[0].Trim();
+                string priceStr = columns[1].Trim();
+                string quantityStr = columns[2].Trim();
+
+                // Validate and parse price
+                if (!decimal.TryParse(priceStr, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal price))
+                {
+                    Console.WriteLine($"Error: ValueError - Invalid price '{columns[1]}' in row: {line}");
+                    _skippedRows++;
+                    continue;
+                }
+
+                // Validate and parse quantity
+                if (!int.TryParse(quantityStr, out int quantity))
+                {
+                    Console.WriteLine($"Error: ValueError - Invalid quantity '{columns[2]}' in row: {line}");
+                    _skippedRows++;
+                    continue;
+                }
+
+                // Validate positive values
+                if (price < 0 || quantity < 0)
+                {
+                    Console.WriteLine($"Error: ValueError - Negative values detected in row: {line}");
+                    _skippedRows++;
+                    continue;
+                }
+
+                _salesData.Add(new SalesItem(productName, price, quantity));
+                _processedRows++;
+            }
+
+            Console.WriteLine($"\nProcessing complete: {_processedRows} rows processed, {_skippedRows} rows skipped.");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Console.WriteLine($"Error: Access Denied - You do not have permission to read '{_filename}'.");
+        }
+        catch (IOException ex)
+        {
+            Console.WriteLine($"Error: IOException - An I/O error occurred while reading '{_filename}': {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error: Unexpected Exception - {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Calculates the total sales revenue by summing the product of price and quantity for all items.
+    /// </summary>
+    /// <returns>The total sales revenue as a decimal value.</returns>
+    public decimal CalculateTotalSales()
+    {
+        return _salesData.Sum(item => item.Price * item.Quantity);
+    }
+
+    /// <summary>
+    /// Identifies and returns the top-selling product by total revenue (price * quantity).
+    /// </summary>
+    /// <returns>A tuple containing the product name and its total revenue.</returns>
+    public (string ProductName, decimal Revenue) FindTopProduct()
+    {
+        if (_salesData.Count == 0)
+        {
+            return ("No data available", 0m);
+        }
+
+        var topProduct = _salesData
+            .Select(item => new { item.ProductName, Revenue = item.Price * item.Quantity })
+            .OrderByDescending(x => x.Revenue)
+            .First();
+
+        return (topProduct.ProductName, topProduct.Revenue);
+    }
+}
+
+/// <summary>
+/// Main program entry point. Demonstrates the usage of the SalesAnalyzer class.
+/// </summary>
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        // Note: For this to run, a file named 'sales_data.csv' must exist
+        // in the output directory (e.g., bin/Debug/net8.0/).
+        string salesDataFile = "sales_data.csv";
+
+        // Example: Create a dummy file if it doesn't exist for testing
+        if (!File.Exists(salesDataFile))
+        {
+            // You should replace this with a real file in a live environment
+            File.WriteAllText(salesDataFile, "product_name,price,quantity\nLaptop,1200.00,5\nMouse,25.50,10\nKeyboard,75.00,8\n");
+        }
+
+        // Instantiate the SalesAnalyzer with the filename
+        SalesAnalyzer analyzer = new SalesAnalyzer(salesDataFile);
+
+        // Load the data from the CSV file
+        analyzer.LoadData();
+
+        // Calculate and display total sales
+        decimal totalSales = analyzer.CalculateTotalSales();
+        Console.WriteLine($"Total sales from {salesDataFile}: {totalSales.ToString("C", CultureInfo.CurrentCulture)}");
+
+        // Find and display the top-selling product
+        var (topProduct, topRevenue) = analyzer.FindTopProduct();
+        Console.WriteLine($"\n═══════════════════════════════════════");
+        Console.WriteLine($"Top-Selling Product: {topProduct}");
+        Console.WriteLine($"Total Revenue: {topRevenue.ToString("C", CultureInfo.CurrentCulture)}");
+        Console.WriteLine($"═══════════════════════════════════════");
+    }
+}
