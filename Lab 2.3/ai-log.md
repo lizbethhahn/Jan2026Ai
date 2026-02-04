@@ -318,3 +318,57 @@ public IActionResult GetUserProfile()
     return NotFound();
 }
 // ...existing code...
+````
+________________________________________________________________________________________________________________
+________________________________________________________________________________________________________________
+
+User: I want you to act as a Senior .NET Architect. Here are examples of the feedback style I expect:
+Example 1: 'On line 6, the database connection string is hardcoded. Consider moving this to appsettings.json and using IConfiguration.'
+Example 2: 'On line 12, string interpolation ($"") in a SQL command allows SQL injection. You must use SqliteParameter to pass values safely.'
+Example 3: 'On line 20, the variable res should be renamed to profileResponse to follow C# PascalCase or camelCase naming conventions.'Now, audit this code:
+
+````csharp
+[HttpGet("/user")]
+public IActionResult GetUserProfile()
+{
+    string userId = Request.Query["id"];
+    
+    using (var connection = new SqliteConnection("Data Source=users.db"))
+    {
+        connection.Open();
+        var command = connection.CreateCommand();
+        
+        // Oh boy... SQL Injection via string interpolation
+        command.CommandText = $"SELECT * FROM users WHERE user_id = {userId}";
+        
+        using (var reader = command.ExecuteReader())
+        {
+            if (reader.Read())
+            {
+                // What are 'temp' and 'res'?
+                var temp = ProcessData(reader); 
+                var res = FormatResponse(temp);
+                return Ok(res);
+            }
+        }
+    }
+    return NotFound();
+}
+````
+## Senior .NET Architect Audit
+
+**On line 4:** The `userId` parameter from `Request.Query["id"]` is used without validation. You must validate it exists, is not empty, and matches the expected type before use. Add a check like `if (!int.TryParse(userId, out var id))` and return `BadRequest()`.
+
+**On line 6:** The database connection string is hardcoded `("Data Source=users.db")`. You must move this to `appsettings.json` and inject `IConfiguration` into the controller. Use `_config.GetConnectionString("DefaultConnection")` instead.
+
+**On line 9:** The `command` object should be wrapped in a `using` statement to ensure proper disposal of resources. Current code only disposes the reader.
+
+**On line 12:** String interpolation `($"...{userId}")` in a SQL command allows SQL injection attacks. You must use parameterized queries with `SqliteParameter` or `AddWithValue()`. Example: `command.Parameters.AddWithValue("@UserId", userId)`.
+
+**On line 18:** The variable `temp` is poorly named and lacks clarity. Rename to `userData` or `userRecord` to convey semantic meaning.
+
+**On line 19:** The variable `res` should be renamed to `profileResponse` or `formattedResponse` to follow C# camelCase naming conventions and improve code readability.
+
+**Lines 3–24:** Missing exception handling. Wrap database operations in a `try-catch` block, log exceptions appropriately, and return `StatusCode(500, "Internal server error")` for unexpected failures.
+
+**Recommendation:** Consider using async patterns (`async IActionResult`, `OpenAsync()`, `ExecuteReaderAsync()`) for better scalability and thread pool efficiency.
